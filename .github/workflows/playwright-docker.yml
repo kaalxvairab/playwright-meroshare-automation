@@ -1,11 +1,7 @@
 name: Playwright Tests (Docker)
 
 on:
-  # Run daily at 6 AM UTC
-  schedule:
-    - cron: "0 6 * * *"
-
-  # Allow manual trigger from GitHub UI
+  # Manual trigger kept only so workflow definition stays in the codebase.
   workflow_dispatch:
     inputs:
       mode:
@@ -17,16 +13,10 @@ on:
           - single
           - multi
 
-  # Run on push to main/master/docker branches (optional, for testing)
-  push:
-    branches:
-      - main
-      - master
-      - docker
-
 jobs:
   test:
     name: "Run Playwright Tests"
+    if: ${{ false }} # disabled: keep workflow file/code without running jobs
     runs-on: ubuntu-latest
 
     steps:
