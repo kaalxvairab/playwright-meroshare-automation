@@ -16,7 +16,7 @@ on:
 jobs:
   test:
     name: "Run Playwright Tests"
-    if: ${{ false }} # disabled: keep workflow file/code without running jobs
+    if: false # disabled: keep workflow file/code without running jobs
     runs-on: ubuntu-latest
 
     steps:
