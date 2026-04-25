@@ -108,7 +108,7 @@ function splitWhatsAppMessage(message, chunkSize = 900) {
   return chunks;
 }
 
-async function sendViaCallMeBot(message, retryCount = 0, maxRetries = 3) {
+async function sendViaCallMeBot(message, retryCount = 0, maxRetries = 4) {
   const endpoint = String(whatsappConfig.endpoint || "").trim();
   const baseUrl = endpoint.includes("whatsapp.php")
     ? endpoint
@@ -124,17 +124,22 @@ async function sendViaCallMeBot(message, retryCount = 0, maxRetries = 3) {
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+    const timeout = setTimeout(() => controller.abort(), 20000); // 20 second timeout for scheduled runs
 
     const response = await fetch(url, {
       method: "GET",
       signal: controller.signal,
       headers: {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Accept": "*/*",
-    "Referer": "https://www.callmebot.com/",
-    "Accept-Language": "en-US,en;q=0.9",
-  },
+        "User-Agent":
+          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        Accept:
+          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Encoding": "gzip, deflate",
+        "Accept-Language": "en-US,en;q=0.9",
+        Referer: "https://www.callmebot.com/blog/free-api-whatsapp-messages/",
+        Connection: "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+      },
     });
 
     clearTimeout(timeout);
@@ -148,13 +153,19 @@ async function sendViaCallMeBot(message, retryCount = 0, maxRetries = 3) {
       hasOutageSignal ||
       bodyLower.includes("error") ||
       bodyLower.includes("invalid") ||
-      bodyLower.includes("forbidden") ||
       bodyLower.includes("unauthorized");
     const hasSuccessSignal =
       bodyLower.includes("sent") ||
       bodyLower.includes("message to:") ||
       bodyLower.includes("text to send:") ||
       bodyLower.includes("queued");
+
+    // 403 Forbidden can be temporary IP reputation issue in scheduled runs - treat as potentially retryable
+    if (response.status === 403) {
+      throw new Error(
+        `CallMeBot IP blocked (${response.status}): Temporary access restriction - will retry`,
+      );
+    }
 
     if (hasOutageSignal) {
       throw new Error(
@@ -174,7 +185,10 @@ async function sendViaCallMeBot(message, retryCount = 0, maxRetries = 3) {
   } catch (error) {
     const isRetryable =
       error.name === "AbortError" ||
-      error.message.includes("CallMeBot service outage");
+      error.message.includes("CallMeBot service outage") ||
+      error.message.includes("IP blocked") ||
+      error.message.includes("ECONNRESET") ||
+      error.message.includes("ETIMEDOUT");
     const shouldRetry = isRetryable && retryCount < maxRetries;
 
     console.error(
@@ -182,7 +196,8 @@ async function sendViaCallMeBot(message, retryCount = 0, maxRetries = 3) {
     );
 
     if (shouldRetry) {
-      const delayMs = Math.pow(2, retryCount) * 1000; // Exponential backoff: 1s, 2s, 4s
+      // Longer exponential backoff for scheduled runs: 2s, 4s, 8s, 16s
+      const delayMs = Math.pow(2, retryCount + 1) * 1000;
       console.log(`[WhatsApp] Retrying in ${delayMs}ms...`);
       await new Promise((resolve) => setTimeout(resolve, delayMs));
       return sendViaCallMeBot(message, retryCount + 1, maxRetries);
